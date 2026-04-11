@@ -29,6 +29,7 @@ export function NotesTable({ notes, onSelectNote, selectedNote }: NotesTableProp
           <thead>
             <tr className="border-b border-border bg-muted/50">
               <th className="px-5 py-3 text-left font-semibold text-muted-foreground">Nota</th>
+              <th className="px-5 py-3 text-left font-semibold text-muted-foreground">Série</th>
               <th className="px-5 py-3 text-left font-semibold text-muted-foreground">Status</th>
               <th className="px-5 py-3 text-left font-semibold text-muted-foreground">Emissão</th>
               <th className="px-5 py-3 text-left font-semibold text-muted-foreground">Motivo</th>
@@ -48,6 +49,7 @@ export function NotesTable({ notes, onSelectNote, selectedNote }: NotesTableProp
                   }`}
                 >
                   <td className="px-5 py-3 font-medium text-foreground">#{note.number}</td>
+                  <td className="px-5 py-3 text-muted-foreground">{note.serie || "—"}</td>
                   <td className="px-5 py-3">
                     <Badge variant="outline" className={cfg.className}>
                       {cfg.label}

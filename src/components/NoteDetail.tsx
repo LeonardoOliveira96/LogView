@@ -16,7 +16,7 @@ export function NoteDetail({ note, onClose }: NoteDetailProps) {
       <div className="animate-fade-in rounded-2xl border border-border bg-card p-6 shadow-sm">
         <div className="mb-4 flex items-center justify-between">
           <h3 className="text-lg font-bold text-foreground">
-            Nota #{note.number}
+            Nota #{note.number}{note.serie ? <span className="ml-2 text-sm font-normal text-muted-foreground">Série {note.serie}</span> : null}
           </h3>
           <div className="flex items-center gap-2">
             {note.nfeXml && (
@@ -177,24 +177,24 @@ export function NoteDetail({ note, onClose }: NoteDetailProps) {
                 <div key={i} className="relative">
                   <div
                     className={`absolute -left-[31px] top-1 h-3 w-3 rounded-full border-2 ${isErr
-                        ? "border-error bg-error/30"
-                        : isWarn
-                          ? "border-warning bg-warning/30"
-                          : isOk
-                            ? "border-success bg-success/30"
-                            : "border-primary bg-primary/30"
+                      ? "border-error bg-error/30"
+                      : isWarn
+                        ? "border-warning bg-warning/30"
+                        : isOk
+                          ? "border-success bg-success/30"
+                          : "border-primary bg-primary/30"
                       }`}
                   />
                   <div className="text-xs text-muted-foreground">{event.time}</div>
                   <div className="mt-0.5 text-sm">
                     <span
                       className={`mr-2 inline-block rounded px-1.5 py-0.5 text-xs font-medium ${isErr
-                          ? "bg-error/15 text-error"
-                          : isWarn
-                            ? "bg-warning/15 text-warning"
-                            : isOk
-                              ? "bg-success/15 text-success"
-                              : "bg-primary/10 text-primary"
+                        ? "bg-error/15 text-error"
+                        : isWarn
+                          ? "bg-warning/15 text-warning"
+                          : isOk
+                            ? "bg-success/15 text-success"
+                            : "bg-primary/10 text-primary"
                         }`}
                     >
                       {event.type || "INFO"}
