@@ -12,6 +12,7 @@ const statusConfig: Record<NoteStatus, { label: string; className: string }> = {
   contingency: { label: "Contingência", className: "bg-warning/15 text-warning border-warning/30" },
   error: { label: "Erro", className: "bg-error/15 text-error border-error/30" },
   inutilizada: { label: "Inutilizada", className: "bg-muted/30 text-muted-foreground border-muted" },
+  cancelada: { label: "Cancelada", className: "bg-destructive/15 text-destructive border-destructive/30" },
 };
 
 export function NotesTable({ notes, onSelectNote, selectedNote }: NotesTableProps) {

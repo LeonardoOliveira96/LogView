@@ -8,7 +8,7 @@ export interface LogEntry {
   metadata?: Record<string, string>;
 }
 
-export type NoteStatus = "approved" | "contingency" | "error" | "inutilizada";
+export type NoteStatus = "approved" | "contingency" | "error" | "inutilizada" | "cancelada";
 
 export interface NoteItem {
   numero: number;
@@ -340,8 +340,12 @@ export function parseLog(content: string): ParsedLog {
         if (noteNum) {
           const note = getNote(noteNum);
           note.errors.push(entry);
-          note.status = "error";
           note.chaveAcesso = chaveMatch[1];
+          // Only change status to error if not already in contingency
+          // This allows contingency notes with errors to remain as contingency
+          if (note.status !== "contingency" && note.status !== "inutilizada") {
+            note.status = "error";
+          }
         }
       }
     }
@@ -542,7 +546,13 @@ export function parseLog(content: string): ParsedLog {
               });
             }
           } else if (situacao) {
-            // Unknown/rejection
+            // Check if this is a cancellation or rejection
+            const isCancellation = 
+              motivo.toLowerCase().includes("cancelad") || 
+              motivo.toLowerCase().includes("cancela") ||
+              motivo.toLowerCase().includes("indisponível") ||
+              parseInt(situacao, 10) > 500;
+            
             const meta: Record<string, string> = {
               "Código Situação": situacao,
               "Motivo": motivo,
@@ -551,11 +561,13 @@ export function parseLog(content: string): ParsedLog {
             if (dhRecbto) meta["Data"] = dhRecbto;
             note.events.push({
               ...entry,
-              type: "REJEIÇÃO",
-              description: `❌ Situação ${situacao}: ${motivo}`,
+              type: isCancellation ? "CANCELAMENTO" : "REJEIÇÃO",
+              description: isCancellation ? `❌ Cancelada: ${motivo}` : `❌ Situação ${situacao}: ${motivo}`,
               metadata: meta,
             });
-            if (note.status !== "error") note.status = "error";
+            if (note.status !== "error") {
+              note.status = isCancellation ? "cancelada" : "error";
+            }
             note.contingencyReason = motivo;
           }
         }
