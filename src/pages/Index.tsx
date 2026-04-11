@@ -28,6 +28,18 @@ const Index = () => {
     setSearch("");
   }, []);
 
+  const handleNavigateToNote = useCallback((noteNumber: string, filter?: string) => {
+    if (!data) return;
+    const note = data.notes.get(noteNumber);
+    if (note) {
+      setSelectedNote(note);
+      if (filter) {
+        setStatusFilter(filter as StatusFilter);
+      }
+      setSearch("");
+    }
+  }, [data]);
+
   const filteredNotes = useMemo(() => {
     if (!data) return [];
     let notes = Array.from(data.notes.values());
@@ -116,6 +128,7 @@ const Index = () => {
                     <NoteDetail
                       note={selectedNote}
                       onClose={() => setSelectedNote(null)}
+                      onNavigateToNote={handleNavigateToNote}
                     />
                   )}
                 </div>

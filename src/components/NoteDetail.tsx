@@ -6,9 +6,10 @@ import { XmlViewerModal } from "./XmlViewerModal";
 interface NoteDetailProps {
   note: Note;
   onClose: () => void;
+  onNavigateToNote?: (noteNumber: string, filter?: string) => void;
 }
 
-export function NoteDetail({ note, onClose }: NoteDetailProps) {
+export function NoteDetail({ note, onClose, onNavigateToNote }: NoteDetailProps) {
   const [showXml, setShowXml] = useState(false);
 
   return (
@@ -19,7 +20,7 @@ export function NoteDetail({ note, onClose }: NoteDetailProps) {
             Nota #{note.number}{note.serie ? <span className="ml-2 text-sm font-normal text-muted-foreground">Série {note.serie}</span> : null}
           </h3>
           <div className="flex items-center gap-2">
-            {note.nfeXml && (
+            {note.nfeXml ? (
               <button
                 onClick={() => setShowXml(true)}
                 className="flex items-center gap-1.5 rounded-lg border border-border bg-muted/40 px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
@@ -27,7 +28,12 @@ export function NoteDetail({ note, onClose }: NoteDetailProps) {
                 <Code2 className="h-3.5 w-3.5" />
                 Ver XML
               </button>
-            )}
+            ) : note.contingency ? (
+              <div className="flex items-center gap-1.5 rounded-lg border border-warning/30 bg-warning/10 px-3 py-1.5 text-xs font-medium text-warning">
+                <AlertTriangle className="h-3.5 w-3.5" />
+                XML Indisponível
+              </div>
+            ) : null}
             <button
               onClick={onClose}
               className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted transition-colors"
@@ -36,6 +42,24 @@ export function NoteDetail({ note, onClose }: NoteDetailProps) {
             </button>
           </div>
         </div>
+
+        {/* Replaced note info */}
+        {note.contingency && note.replacedNote && onNavigateToNote && (
+          <div className="mb-4 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2">
+            <p className="text-xs text-muted-foreground mb-1">Nota em Contingência</p>
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-foreground">
+                Substituiu a nota <span className="font-bold text-warning">#{note.replacedNote}</span> (inutilizada)
+              </p>
+              <button
+                onClick={() => onNavigateToNote(note.replacedNote, "inutilizada")}
+                className="ml-2 text-xs font-medium px-2 py-1 rounded bg-warning/20 text-warning hover:bg-warning/30 transition-colors whitespace-nowrap"
+              >
+                Ver nota
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Summary info strip */}
         {(note.valor > 0 || note.protocolo || note.formaPagamento || note.dhEmissao) && (
@@ -134,6 +158,19 @@ export function NoteDetail({ note, onClose }: NoteDetailProps) {
           </div>
         )}
 
+        {/* No data warning for contingency notes */}
+        {note.contingency && note.itens.length === 0 && !note.nfeXml && (
+          <div className="mb-4 flex items-start gap-3 rounded-xl border border-warning/30 bg-warning/5 p-4">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+            <div>
+              <p className="text-sm font-medium text-warning">⚠️ Dados Incompletos</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Esta nota em contingência foi gerada sem dados completos disponíveis no log. Os itens podem estar em outro arquivo ou processamento distinto no ERP.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Contingency info banner */}
         {note.contingency && (
           <div className="mb-4 flex items-start gap-3 rounded-xl border border-warning/30 bg-warning/5 p-4">
@@ -174,6 +211,7 @@ export function NoteDetail({ note, onClose }: NoteDetailProps) {
               const isWarn = event.type === "CONTINGÊNCIA";
               const isOk = event.type === "AUTORIZADO";
               const isUpdate = event.type === "UPDATE" || event.type === "BACKUP";
+              const isInutilization = event.type === "INUTILIZAÇÃO";
               return (
                 <div key={i} className="relative">
                   <div
@@ -185,7 +223,9 @@ export function NoteDetail({ note, onClose }: NoteDetailProps) {
                           ? "border-success bg-success/30"
                           : isUpdate
                             ? "border-blue-500 bg-blue-500/30"
-                            : "border-primary bg-primary/30"
+                            : isInutilization
+                              ? "border-slate-400 bg-slate-400/30"
+                              : "border-primary bg-primary/30"
                       }`}
                   />
                   <div className="text-xs text-muted-foreground">{event.time}</div>
@@ -199,7 +239,9 @@ export function NoteDetail({ note, onClose }: NoteDetailProps) {
                             ? "bg-success/15 text-success"
                             : isUpdate
                               ? "bg-blue-500/15 text-blue-500"
-                              : "bg-primary/10 text-primary"
+                              : isInutilization
+                                ? "bg-slate-400/15 text-slate-600"
+                                : "bg-primary/10 text-primary"
                         }`}
                     >
                       {event.type || "INFO"}

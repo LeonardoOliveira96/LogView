@@ -8,7 +8,7 @@ export interface LogEntry {
   metadata?: Record<string, string>;
 }
 
-export type NoteStatus = "approved" | "contingency" | "error";
+export type NoteStatus = "approved" | "contingency" | "error" | "inutilizada";
 
 export interface NoteItem {
   numero: number;
@@ -39,6 +39,9 @@ export interface Note {
   formaPagamento: string;// Payment method label
   itens: NoteItem[];     // Note items
   dhEmissao: string;     // Emission date/time
+  // Relationship fields
+  replacedNote?: string;  // Note number that was inutilized and replaced by this contingency note
+  replacedByNote?: string; // Note number that replaced this inutilized note with contingency
 }
 
 export interface Instability {
@@ -258,6 +261,8 @@ export function parseLog(content: string): ParsedLog {
         formaPagamento: "",
         itens: [],
         dhEmissao: "",
+        replacedNote: undefined,
+        replacedByNote: undefined,
       });
     }
     return notesMap.get(num)!;
@@ -490,6 +495,7 @@ export function parseLog(content: string): ParsedLog {
           } else if (situacao === "302") {
             // Contingência — only add once
             note.contingency = true;
+            note.emissionType = "9"; // Mark as offline emission (contingency)
             note.contingencyReason = motivo || "Contingência liberada pelo PDV";
             if (note.status !== "error") note.status = "contingency";
             if (!note.events.some(e => e.type === "CONTINGÊNCIA")) {
@@ -501,10 +507,29 @@ export function parseLog(content: string): ParsedLog {
               if (dhRecbto) meta["Data Ocorrência"] = dhRecbto;
               meta["Tipo Emissão"] = "Offline (tpEmis=9)";
               meta["Detalhes"] = "O PDV identificou inconsistência nos dados e emitiu a nota em modo contingência offline. A chave ainda precisa ser autorizada pela SEFAZ quando a conexão for restabelecida.";
+              meta["Ação Automática"] = "A nota original será posteriormente inutilizada";
               note.events.push({
                 ...entry,
                 type: "CONTINGÊNCIA",
                 description: `⚠️ ${motivo}`,
+                metadata: meta,
+              });
+            }
+          } else if (situacao === "301") {
+            // Inutilização — only add once
+            if (note.status !== "error") note.status = "approved"; // Mark as resolved
+            if (!note.events.some(e => e.type === "INUTILIZAÇÃO")) {
+              const meta: Record<string, string> = {
+                "Situação": `${situacao} – Inutilizada`,
+                "Motivo": motivo,
+              };
+              if (chaveMatch) meta["Chave de Acesso"] = chaveMatch[1];
+              if (dhRecbto) meta["Data Processamento"] = dhRecbto;
+              meta["Detalhes"] = "Nota inutilizada no sistema fiscal. Uma nota em contingência foi gerada em seu lugar.";
+              note.events.push({
+                ...entry,
+                type: "INUTILIZAÇÃO",
+                description: `📋 ${motivo}`,
                 metadata: meta,
               });
             }
@@ -539,8 +564,77 @@ export function parseLog(content: string): ParsedLog {
 
     // ─── XML flow events (CRIADO → ENVIADO → CONFIRMADO) ───
     if (["XML CRIADO", "XML ENVIADO", "XML CONFIRMADO"].includes(entry.type)) {
-      // Try to find nNF in the XML content
-      const nnfMatch = desc.match(/nNF>(\d+)/);
+      // Skip if this is a JSON status update (alteraStatus) or a log message (dadosUsuarioLog)
+      // These are not actual XML flow events, just metadata updates
+      if (desc.includes("alteraStatus") || desc.includes("dadosUsuarioLog")) {
+        return;
+      }
+
+      // ─── Extract NF-e data from XML CRIADO (NFe type) ───
+      if (entry.type === "XML CRIADO" && desc.includes("<NFe ")) {
+        // This is a full NF-e XML from contingency authorization or backup
+        const nfeStart = desc.indexOf("<?xml");
+        if (nfeStart !== -1) {
+          const nfeEnd = desc.indexOf("</NFe>") + 6;
+          const nfeXml = desc.substring(nfeStart, nfeEnd);
+          
+          // Extract nNF to identify the note
+          const nnfMatch = nfeXml.match(/<nNF>(\d+)<\/nNF>/);
+          if (nnfMatch) {
+            const noteNum = nnfMatch[1];
+            const note = getNote(noteNum);
+            
+            // Store the complete NF-e XML for viewing
+            note.nfeXml = nfeXml;
+            
+            // Extract chaveAcesso from infNFe Id
+            const chaveFromId = nfeXml.match(/Id="NFe(\d{44})"/);
+            if (chaveFromId && !note.chaveAcesso) {
+              note.chaveAcesso = chaveFromId[1];
+            }
+            
+            // Extract valor (vNF)
+            if (!note.valor) {
+              const vNFMatch = nfeXml.match(/<vNF>([^<]+)<\/vNF>/);
+              if (vNFMatch) note.valor = parseFloat(vNFMatch[1]);
+            }
+            
+            // Extract dhEmissao
+            if (!note.dhEmissao) {
+              const dhMatch = nfeXml.match(/<dhEmi>([^<]+)<\/dhEmi>/);
+              if (dhMatch) note.dhEmissao = dhMatch[1];
+            }
+            
+            // Extract tPag (payment method)
+            if (!note.formaPagamento) {
+              const tpagMatch = nfeXml.match(/<tPag>(\d+)<\/tPag>/);
+              if (tpagMatch) note.formaPagamento = TPAG_MAP[tpagMatch[1]] ?? `Código ${tpagMatch[1]}`;
+            }
+            
+            // Extract itens from det blocks
+            if (note.itens.length === 0) {
+              note.itens = parseItens(nfeXml);
+            }
+            
+            // Check if contingency (tpEmis=9)
+            const tpEmisMatch = nfeXml.match(/<tpEmis>9<\/tpEmis>/);
+            if (tpEmisMatch) {
+              note.contingency = true;
+              note.emissionType = "9";
+              if (note.status !== "error") note.status = "contingency";
+              const justMatch = nfeXml.match(/<xJust>([^<]*)<\/xJust>/);
+              if (justMatch && !note.contingencyReason) {
+                note.contingencyReason = justMatch[1];
+              }
+            }
+          }
+        }
+        // Don't continue to process this further as a regular XML CRIADO event
+        return;
+      }
+
+      // Try to find nNF in the XML content for regular XML flow events
+      const nnfMatch = desc.match(/<nNF>(\d+)<\/nNF>/);
       // Also try to find chaveAcesso as fallback
       const chaveMatch = nnfMatch ? null : desc.match(/(\d{44})/);
       const eventChave = chaveMatch ? chaveMatch[1] : null;
@@ -554,36 +648,63 @@ export function parseLog(content: string): ParsedLog {
           entry.type === "XML CRIADO" ? "XML Criado" :
           entry.type === "XML ENVIADO" ? "XML Enviado" :
           "XML Confirmado";
-        note.events.push({
-          ...entry,
-          description: `${label} — Nota #${noteNum}`,
-        });
+        
+        // Check if this event type already exists for this note to avoid duplicates
+        const eventTypePrefix = entry.type.replace(" ", "");
+        const eventExists = note.events.some(e => e.description?.includes(eventTypePrefix));
+        
+        if (!eventExists) {
+          note.events.push({
+            ...entry,
+            description: `${label} — Nota #${noteNum}`,
+          });
+        }
 
-        // ─── Extract NF-e data from XML CRIADO (NFe type) ───
-        if (entry.type === "XML CRIADO" && desc.includes("<NFe ")) {
-          // Store raw XML for viewing
+        // ─── Extract data from <venda> XML (contingency or backup sales) ───
+        if (entry.type === "XML CRIADO" && desc.includes("<venda>")) {
+          // Store raw XML for viewing (only if not already set with NF-e)
           if (!note.nfeXml) {
-            const nfeStart = desc.indexOf("<?xml");
-            if (nfeStart !== -1) note.nfeXml = desc.substring(nfeStart);
+            const xmlStart = desc.indexOf("<?xml");
+            if (xmlStart !== -1) note.nfeXml = desc.substring(xmlStart);
           }
-          // Extract valor
+          // Extract chave_acesso (for contingency linking)
+          if (!note.chaveAcesso) {
+            const chaveMatch = desc.match(/<chave_acesso>(\d{44})<\/chave_acesso>/);
+            if (chaveMatch) note.chaveAcesso = chaveMatch[1];
+          }
+          // Extract vrTotal value
           if (!note.valor) {
-            const vNFMatch = desc.match(/vNF>([\d.]+)/);
-            if (vNFMatch) note.valor = parseFloat(vNFMatch[1]);
+            const vrTotalMatch = desc.match(/<vrTotal>([\d.]+)<\/vrTotal>/);
+            if (vrTotalMatch) note.valor = parseFloat(vrTotalMatch[1]);
           }
-          // Extract dhEmissao
+          // Extract dataHora as dhEmissao
           if (!note.dhEmissao) {
-            const dhMatch = desc.match(/dhEmi>([^<]+)/);
-            if (dhMatch) note.dhEmissao = dhMatch[1];
+            const dataHoraMatch = desc.match(/<dataHora>(\d+)<\/dataHora>/);
+            if (dataHoraMatch) {
+              const timestamp = parseInt(dataHoraMatch[1], 10);
+              const date = new Date(timestamp);
+              note.dhEmissao = date.toISOString().split('T')[0] + 'T' + date.toISOString().split('T')[1];
+            }
           }
-          // Extract payment method
-          if (!note.formaPagamento) {
-            const tpagMatch = desc.match(/tPag>(\d+)/);
-            if (tpagMatch) note.formaPagamento = TPAG_MAP[tpagMatch[1]] ?? `Código ${tpagMatch[1]}`;
-          }
-          // Extract itens
+          // Extract itens from venda (most important for contingency!)
           if (note.itens.length === 0) {
-            note.itens = parseItens(desc);
+            const itensMatch = desc.match(/<itens>([\s\S]*?)<\/itens>/);
+            if (itensMatch) {
+              note.itens = parseItens(itensMatch[1]);
+            }
+          }
+          // Check if this is contingency emission
+          if (!note.contingency) {
+            const tipoEmissaoMatch = desc.match(/<tipo_emissao>9<\/tipo_emissao>/);
+            if (tipoEmissaoMatch) {
+              note.contingency = true;
+              note.emissionType = "9";
+              if (note.status !== "error") note.status = "contingency";
+              const justMatch = desc.match(/<justif_contingencia>([^<]*)<\/justif_contingencia>/);
+              if (justMatch && justMatch[1]) {
+                note.contingencyReason = justMatch[1];
+              }
+            }
           }
         }
 
@@ -596,6 +717,81 @@ export function parseLog(content: string): ParsedLog {
           if (!note.contingencyReason) {
             note.contingencyReason = "Emissão em contingência offline (tpEmis=9)";
           }
+        }
+      }
+    }
+
+    // ─── processaSitCanc — status check events (SEFAZ verification) ───
+    if (entry.type === "processaSitCanc") {
+      const statusCodeMatch = desc.match(/Status[:\s]+(\d+)/);
+      const chaveMatch = desc.match(/(\d{44})/);
+      
+      if (chaveMatch) {
+        const noteNum = noteFromChave(chaveMatch[1]);
+        const statusCode = statusCodeMatch ? statusCodeMatch[1] : "";
+        
+        if (noteNum) {
+          const note = getNote(noteNum);
+          note.chaveAcesso = chaveMatch[1];
+          
+          // Status 704 = not authorized/not found at SEFAZ
+          // This is the trigger for creating the inutilization
+          if (statusCode === "704") {
+            note.events.push({
+              ...entry,
+              type: "EVENTO",
+              description: `🔍 Verificação SEFAZ: Nota não encontrada — será inutilizada`,
+              metadata: {
+                "Chave de Acesso": chaveMatch[1],
+                "Status SEFAZ": "704 (Não Autorizada)",
+                "Ação": "Iniciando processo de inutilização automaticamente",
+              },
+            });
+          } else if (statusCode) {
+            note.events.push({
+              ...entry,
+              type: "EVENTO",
+              description: `🔍 Verificação SEFAZ: Status ${statusCode}`,
+              metadata: {
+                "Chave de Acesso": chaveMatch[1],
+                "Status SEFAZ": statusCode,
+              },
+            });
+          }
+        }
+      }
+    }
+
+    // ─── inutNFe blocks — capture inutilization XML events ───
+    if (entry.type === "XML CRIADO" && desc.includes("<inutNFe")) {
+      // Extract note numbers from inutilization range
+      const nNFIniMatch = desc.match(/<nNFIni>(\d+)<\/nNFIni>/);
+      const nNFFinMatch = desc.match(/<nNFFin>(\d+)<\/nNFFin>/);
+      const xJustMatch = desc.match(/<xJust>([^<]+)<\/xJust>/);
+      const justificativa = xJustMatch ? xJustMatch[1] : "Inutilizada";
+      
+      if (nNFIniMatch) {
+        const nNFStart = parseInt(nNFIniMatch[1], 10);
+        const nNFEnd = nNFFinMatch ? parseInt(nNFFinMatch[1], 10) : nNFStart;
+        
+        for (let nNF = nNFStart; nNF <= nNFEnd; nNF++) {
+          const note = getNote(String(nNF));
+          
+          // Only add event if not already added
+          if (!note.events.some(e => e.type === "INUTILIZAÇÃO")) {
+            note.events.push({
+              ...entry,
+              type: "INUTILIZAÇÃO",
+              description: `📋 ${justificativa}`,
+              metadata: {
+                "Número NF": String(nNF),
+                "Motivo": justificativa,
+                "Detalhes": desc.includes("contigencia") ? "Nota original substituída por nota em contingência" : "Nota inutilizada no sistema",
+              },
+            });
+          }
+          // Always update status to inutilizada (moved outside the if)
+          note.status = "inutilizada";
         }
       }
     }
@@ -650,6 +846,53 @@ export function parseLog(content: string): ParsedLog {
         const serieXmlMatch = note.nfeXml.match(/<serie>(\d+)<\/serie>/);
         if (serieXmlMatch) note.serie = String(parseInt(serieXmlMatch[1], 10));
       }
+    }
+  });
+
+  // ─── Link inutilized notes with their replacement contingency notes ───
+  // When a note is inutilized due to contingency, find the next contingency note that replaced it
+  notesMap.forEach((note, noteNumber) => {
+    if (note.status === "inutilizada") {
+      // Check if this note was replaced by a contingency note
+      const inutEvent = note.events.find((e) => e.type === "INUTILIZAÇÃO");
+      if (inutEvent && inutEvent.metadata?.["Detalhes"]?.includes("contingência")) {
+        // Find the next contingency note (with higher number)
+        const currentNum = parseInt(noteNumber, 10);
+        let replacementNote: Note | null = null;
+        let closestNum = Infinity;
+
+        notesMap.forEach((other, otherNum) => {
+          const otherNumInt = parseInt(otherNum, 10);
+          if (otherNumInt > currentNum && otherNumInt < closestNum && other.contingency && other.status === "contingency") {
+            replacementNote = other;
+            closestNum = otherNumInt;
+          }
+        });
+
+        if (replacementNote) {
+          note.replacedByNote = replacementNote.number;
+          replacementNote.replacedNote = noteNumber;
+        }
+      }
+    }
+  });
+
+  // ─── Post-processing: remove fictitious notes (only JSON status, no real XML data) ───
+  // A note is considered fictitious if:
+  // - No nfeXml (no actual NF-e authorization document)
+  // - No itens (no products recorded)
+  // - All events are just JSON status updates (not real XML events)
+  notesMap.forEach((note, noteNumber) => {
+    // Check if note has ANY real XML events (not just JSON alteraStatus)
+    const hasRealXmlEvent = note.events.some(
+      (e) => e.type === "XML CRIADO" || e.type === "XML ENVIADO" || e.type === "XML CONFIRMADO" ||
+             (e.description && e.description.includes("XML Criado")) ||
+             (e.description && e.description.includes("XML Enviado"))
+    );
+
+    // If note has no XML, no items, and no real XML events → remove it
+    if (!note.nfeXml && note.itens.length === 0 && !hasRealXmlEvent) {
+      notesMap.delete(noteNumber);
     }
   });
 

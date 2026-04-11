@@ -1,7 +1,7 @@
 import { Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 
-export type StatusFilter = "all" | "approved" | "contingency" | "error";
+export type StatusFilter = "all" | "approved" | "contingency" | "error" | "inutilizada";
 
 interface FiltersProps {
   statusFilter: StatusFilter;
@@ -15,6 +15,7 @@ const statuses: { value: StatusFilter; label: string }[] = [
   { value: "approved", label: "Aprovadas" },
   { value: "contingency", label: "Contingência" },
   { value: "error", label: "Erros" },
+  { value: "inutilizada", label: "Inutilizadas" },
 ];
 
 export function Filters({ statusFilter, onStatusChange, search, onSearchChange }: FiltersProps) {
