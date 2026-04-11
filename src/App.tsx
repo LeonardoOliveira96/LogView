@@ -8,7 +8,7 @@ import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
 
-const basename = import.meta.env.PROD ? "/logplus" : "/";
+const basename = import.meta.env.PROD ? "/LogView/" : "/";
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
