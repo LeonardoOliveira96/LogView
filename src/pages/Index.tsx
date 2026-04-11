@@ -28,18 +28,6 @@ const Index = () => {
     setSearch("");
   }, []);
 
-  // Global Ctrl+F opens log viewer when data is loaded
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === "f" && data && !showLogViewer) {
-        e.preventDefault();
-        setShowLogViewer(true);
-      }
-    };
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
-  }, [data, showLogViewer]);
-
   const filteredNotes = useMemo(() => {
     if (!data) return [];
     let notes = Array.from(data.notes.values());
@@ -69,11 +57,10 @@ const Index = () => {
             <button
               onClick={() => setShowLogViewer(true)}
               className="flex items-center gap-1.5 rounded-lg border border-border bg-muted/40 px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              title="Abrir log completo (Ctrl+F)"
+              title="Abrir log completo"
             >
               <ScrollText className="h-3.5 w-3.5" />
               Ver Log
-              <kbd className="ml-1 rounded bg-muted/60 px-1 text-[10px] text-muted-foreground/60">Ctrl+F</kbd>
             </button>
           )}
           {data && (
