@@ -190,6 +190,145 @@ export function formatXml(xml: string): string {
   return result.trim();
 }
 
+/** Pretty-print event blocks with proper formatting and line breaking */
+export function formatEventBlock(block: string): string {
+  const trimmed = block.trim();
+  let formatted = trimmed;
+  
+  // First, check if it contains XML/HTML tags
+  if (trimmed.includes("<") && trimmed.includes(">")) {
+    try {
+      // Try to format as XML
+      formatted = formatXml(trimmed);
+      return formatted;
+    } catch {
+      // If formatXml fails, continue with other formats
+    }
+  }
+  
+  // Try to detect and format JSON
+  // 1. Check if it's pure JSON
+  if ((trimmed.startsWith("{") || trimmed.startsWith("[")) && (trimmed.endsWith("}") || trimmed.endsWith("]"))) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      formatted = JSON.stringify(parsed, null, 2);
+      return formatted;
+    } catch {
+      // Not valid JSON, continue with other formats
+    }
+  }
+
+  // 2. Try to extract JSON from within the string (e.g., "...{json}...")
+  if (trimmed.includes("{") || trimmed.includes("[")) {
+    // Find the most complete JSON object/array in the string
+    const segments = trimmed.split(/(?=[{\[])/);
+    
+    for (const segment of segments) {
+      try {
+        // Try to find closing brace/bracket
+        let braceCount = 0;
+        let bracketCount = 0;
+        let endIndex = 0;
+        let inString = false;
+        let escapeNext = false;
+        
+        for (let i = 0; i < segment.length; i++) {
+          const char = segment[i];
+          
+          if (escapeNext) {
+            escapeNext = false;
+            continue;
+          }
+          
+          if (char === "\\") {
+            escapeNext = true;
+            continue;
+          }
+          
+          if (char === '"' && !escapeNext) {
+            inString = !inString;
+            continue;
+          }
+          
+          if (!inString) {
+            if (char === "{") braceCount++;
+            if (char === "}") braceCount--;
+            if (char === "[") bracketCount++;
+            if (char === "]") bracketCount--;
+            
+            if (braceCount === 0 && bracketCount === 0 && (char === "}" || char === "]")) {
+              endIndex = i + 1;
+              break;
+            }
+          }
+        }
+        
+        if (endIndex > 0) {
+          const jsonStr = segment.substring(0, endIndex).trim();
+          const parsed = JSON.parse(jsonStr);
+          formatted = JSON.stringify(parsed, null, 2);
+          return formatted;
+        }
+      } catch {
+        // Continue to next segment
+      }
+    }
+  }
+
+  // 3. Try to detect escaped JSON strings
+  if (trimmed.includes("\\{") || trimmed.includes("\\[")) {
+    try {
+      // Try to unescape and parse
+      const unescaped = trimmed
+        .replace(/\\"/g, '"')
+        .replace(/\\\//g, "/")
+        .replace(/\\n/g, "\n")
+        .replace(/\\r/g, "\r")
+        .replace(/\\t/g, "\t");
+      
+      const jsonMatch = unescaped.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        formatted = JSON.stringify(parsed, null, 2);
+        return formatted;
+      }
+    } catch {
+      // Continue with plaintext formatting
+    }
+  }
+
+  // Break long lines to prevent horizontal scrolling (max 120 chars per line)
+  const lines = formatted.split("\n");
+  const maxLineLength = 120;
+  const brokenLines: string[] = [];
+  
+  for (const line of lines) {
+    if (line.length > maxLineLength) {
+      // For long lines, break them up while preserving indentation
+      const indentation = line.match(/^\s*/)?.[0] || "";
+      const content = line.substring(indentation.length);
+      const words = content.split(/(\s+)/);
+      
+      let currentLine = indentation;
+      for (const word of words) {
+        if ((currentLine + word).length > maxLineLength && currentLine.trim().length > 0) {
+          brokenLines.push(currentLine);
+          currentLine = indentation + word;
+        } else {
+          currentLine += word;
+        }
+      }
+      if (currentLine.trim().length > 0) {
+        brokenLines.push(currentLine);
+      }
+    } else {
+      brokenLines.push(line);
+    }
+  }
+  
+  return brokenLines.join("\n");
+}
+
 const LINE_REGEX = /^(\d{2}\/\d{2}\/\d{4})\s+(\d{2}:\d{2}:\d{2})\s+\[([^\]]*)\]\s*(.*)$/;
 
 // Extract nNF (note number) from a 44-digit chaveAcesso: positions 25-33 (9 digits)

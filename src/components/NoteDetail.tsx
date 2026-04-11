@@ -1,7 +1,8 @@
 import { useState } from "react";
-import type { Note } from "@/lib/logParser";
-import { X, AlertTriangle, Code2, DollarSign, Hash, CreditCard, Package, Calendar } from "lucide-react";
+import type { Note, LogEntry } from "@/lib/logParser";
+import { X, AlertTriangle, Code2, DollarSign, Hash, CreditCard, Package, Calendar, FileText } from "lucide-react";
 import { XmlViewerModal } from "./XmlViewerModal";
+import { EventBlockModal } from "./EventBlockModal";
 
 interface NoteDetailProps {
   note: Note;
@@ -11,6 +12,7 @@ interface NoteDetailProps {
 
 export function NoteDetail({ note, onClose, onNavigateToNote }: NoteDetailProps) {
   const [showXml, setShowXml] = useState(false);
+  const [selectedEvent, setSelectedEvent] = useState<LogEntry | null>(null);
 
   return (
     <>
@@ -229,24 +231,35 @@ export function NoteDetail({ note, onClose, onNavigateToNote }: NoteDetailProps)
                       }`}
                   />
                   <div className="text-xs text-muted-foreground">{event.time}</div>
-                  <div className="mt-0.5 text-sm">
-                    <span
-                      className={`mr-2 inline-block rounded px-1.5 py-0.5 text-xs font-medium ${isErr
-                        ? "bg-error/15 text-error"
-                        : isWarn
-                          ? "bg-warning/15 text-warning"
-                          : isOk
-                            ? "bg-success/15 text-success"
-                            : isUpdate
-                              ? "bg-blue-500/15 text-blue-500"
-                              : isInutilization
-                                ? "bg-slate-400/15 text-slate-600"
-                                : "bg-primary/10 text-primary"
-                        }`}
-                    >
-                      {event.type || "INFO"}
-                    </span>
-                    <span className="text-foreground">{event.description}</span>
+                  <div className="mt-0.5 text-sm flex items-center justify-between">
+                    <div>
+                      <span
+                        className={`mr-2 inline-block rounded px-1.5 py-0.5 text-xs font-medium ${isErr
+                          ? "bg-error/15 text-error"
+                          : isWarn
+                            ? "bg-warning/15 text-warning"
+                            : isOk
+                              ? "bg-success/15 text-success"
+                              : isUpdate
+                                ? "bg-blue-500/15 text-blue-500"
+                                : isInutilization
+                                  ? "bg-slate-400/15 text-slate-600"
+                                  : "bg-primary/10 text-primary"
+                          }`}
+                      >
+                        {event.type || "INFO"}
+                      </span>
+                      <span className="text-foreground">{event.description}</span>
+                    </div>
+                    {event.raw && (
+                      <button
+                        onClick={() => setSelectedEvent(event)}
+                        className="ml-2 flex items-center gap-1 rounded px-2 py-1 text-xs font-medium bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors whitespace-nowrap"
+                      >
+                        <FileText className="h-3 w-3" />
+                        Ver Bloco
+                      </button>
+                    )}
                   </div>
                   {event.metadata && Object.keys(event.metadata).length > 0 && (
                     <div className="mt-2 rounded-lg border border-border/60 bg-muted/20 p-2.5 space-y-1">
@@ -270,6 +283,14 @@ export function NoteDetail({ note, onClose, onNavigateToNote }: NoteDetailProps)
           xml={note.nfeXml}
           title={`XML da Nota #${note.number}`}
           onClose={() => setShowXml(false)}
+        />
+      )}
+
+      {selectedEvent && selectedEvent.raw && (
+        <EventBlockModal
+          block={selectedEvent.raw}
+          title={`Bloco - ${selectedEvent.type} (${selectedEvent.time})`}
+          onClose={() => setSelectedEvent(null)}
         />
       )}
     </>
