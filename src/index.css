@@ -1,7 +1,11 @@
+/* stylelint-disable-next-line */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
+/* stylelint-disable-next-line */
 @tailwind base;
+/* stylelint-disable-next-line */
 @tailwind components;
+/* stylelint-disable-next-line */
 @tailwind utilities;
 
 @layer base {
@@ -92,10 +96,12 @@
 
 @layer base {
   * {
+    /* stylelint-disable-next-line */
     @apply border-border;
   }
 
   body {
+    /* stylelint-disable-next-line */
     @apply bg-background text-foreground font-sans;
     font-family: 'Inter', sans-serif;
   }
