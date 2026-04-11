@@ -168,11 +168,12 @@ export function NoteDetail({ note, onClose }: NoteDetailProps) {
         {note.events.length === 0 ? (
           <p className="text-sm text-muted-foreground">Nenhum evento registrado.</p>
         ) : (
-          <div className="relative ml-3 border-l-2 border-border pl-6 space-y-4 max-h-[300px] overflow-y-auto">
+          <div className="relative ml-3 border-l-2 border-border pl-6 space-y-4">
             {note.events.map((event, i) => {
               const isErr = event.type === "ERROR" || event.type === "REJEIÇÃO";
               const isWarn = event.type === "CONTINGÊNCIA";
               const isOk = event.type === "AUTORIZADO";
+              const isUpdate = event.type === "UPDATE" || event.type === "BACKUP";
               return (
                 <div key={i} className="relative">
                   <div
@@ -182,7 +183,9 @@ export function NoteDetail({ note, onClose }: NoteDetailProps) {
                         ? "border-warning bg-warning/30"
                         : isOk
                           ? "border-success bg-success/30"
-                          : "border-primary bg-primary/30"
+                          : isUpdate
+                            ? "border-blue-500 bg-blue-500/30"
+                            : "border-primary bg-primary/30"
                       }`}
                   />
                   <div className="text-xs text-muted-foreground">{event.time}</div>
@@ -194,7 +197,9 @@ export function NoteDetail({ note, onClose }: NoteDetailProps) {
                           ? "bg-warning/15 text-warning"
                           : isOk
                             ? "bg-success/15 text-success"
-                            : "bg-primary/10 text-primary"
+                            : isUpdate
+                              ? "bg-blue-500/15 text-blue-500"
+                              : "bg-primary/10 text-primary"
                         }`}
                     >
                       {event.type || "INFO"}

@@ -385,7 +385,8 @@ export function parseLog(content: string): ParsedLog {
           note.chaveAcesso = chaveMatch[1];
           note.events.push({
             ...entry,
-            description: "Chave NFC-e atualizada no ERP",
+            type: "UPDATE",
+            description: "Chave NFC-e atualizada",
             metadata: {
               "Chave de Acesso": chaveMatch[1],
               "Ação": "Registro enviado ao ERP para vinculação da chave autorizada",
@@ -418,6 +419,25 @@ export function parseLog(content: string): ParsedLog {
             const xmlFieldMatch = desc.match(/"xml":"((?:[^"\\]|\\.)*)"/);
             if (xmlFieldMatch) {
               note.nfeXml = decodeXml(xmlFieldMatch[1]);
+              // Extract items from the decoded XML if not already extracted
+              if (note.itens.length === 0) {
+                note.itens = parseItens(note.nfeXml);
+              }
+              // Extract valor if not already set
+              if (!note.valor) {
+                const vNFMatch = note.nfeXml.match(/vNF[^>]*>([^<]+)</);
+                if (vNFMatch) note.valor = parseFloat(vNFMatch[1]);
+              }
+              // Extract dhEmissao if not already set
+              if (!note.dhEmissao) {
+                const dhMatch = note.nfeXml.match(/dhEmi[^>]*>([^<]+)</);
+                if (dhMatch) note.dhEmissao = dhMatch[1];
+              }
+              // Extract payment method if not already set
+              if (!note.formaPagamento) {
+                const tpagMatch = note.nfeXml.match(/tPag[^>]*>(\d+)</);
+                if (tpagMatch) note.formaPagamento = TPAG_MAP[tpagMatch[1]] ?? `Código ${tpagMatch[1]}`;
+              }
             }
           }
 
@@ -521,15 +541,22 @@ export function parseLog(content: string): ParsedLog {
     if (["XML CRIADO", "XML ENVIADO", "XML CONFIRMADO"].includes(entry.type)) {
       // Try to find nNF in the XML content
       const nnfMatch = desc.match(/nNF>(\d+)/);
-      if (nnfMatch) {
-        const note = getNote(nnfMatch[1]);
+      // Also try to find chaveAcesso as fallback
+      const chaveMatch = nnfMatch ? null : desc.match(/(\d{44})/);
+      const eventChave = chaveMatch ? chaveMatch[1] : null;
+      const noteNum = nnfMatch ? nnfMatch[1] : (eventChave ? noteFromChave(eventChave) : null);
+      
+      if (noteNum) {
+        const note = getNote(noteNum);
+        if (eventChave) note.chaveAcesso = eventChave;
+        
         const label =
           entry.type === "XML CRIADO" ? "XML Criado" :
           entry.type === "XML ENVIADO" ? "XML Enviado" :
           "XML Confirmado";
         note.events.push({
           ...entry,
-          description: `${label} — Nota #${nnfMatch[1]}`,
+          description: `${label} — Nota #${noteNum}`,
         });
 
         // ─── Extract NF-e data from XML CRIADO (NFe type) ───
