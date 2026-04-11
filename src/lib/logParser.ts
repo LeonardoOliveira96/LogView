@@ -127,25 +127,64 @@ function parseItens(xml: string): NoteItem[] {
   return items;
 }
 
-/** Pretty-print XML with indentation */
+/** Pretty-print XML with proper indentation */
 export function formatXml(xml: string): string {
+  let result = "";
   let depth = 0;
   const indent = "  ";
-  return xml
-    .replace(/>\s*</g, "><")
-    .replace(/>(?!<)/g, ">\n")
-    .replace(/(<[^/!][^>]*[^/]>)/g, (tag) => {
-      const result = indent.repeat(depth) + tag;
-      if (!tag.startsWith("</") && !tag.endsWith("/>")) depth++;
-      return result;
-    })
-    .replace(/<\/[^>]+>/g, (tag) => {
-      depth = Math.max(0, depth - 1);
-      return indent.repeat(depth) + tag;
-    })
-    .split("\n")
-    .filter((l) => l.trim())
-    .join("\n");
+
+  // First, normalize spacing around tags
+  xml = xml.replace(/>\s+</g, "><");
+
+  // Split by tags while keeping them
+  const tokens = xml.split(/(<[^>]+>)/);
+
+  let i = 0;
+  while (i < tokens.length) {
+    const token = tokens[i];
+    
+    if (!token.trim()) {
+      i++;
+      continue;
+    }
+
+    const isClosing = token.startsWith("</");
+    const isSelfClosing = token.endsWith("/>");
+    const isOpening = token.startsWith("<") && !isClosing && !isSelfClosing;
+
+    // Check if this is a simple value: <tag>value</tag>
+    if (isOpening && i + 2 < tokens.length) {
+      const nextToken = tokens[i + 1];
+      const followingToken = tokens[i + 2];
+      
+      // Pattern: opening tag + simple text + closing tag
+      if (
+        nextToken &&
+        !nextToken.trim().startsWith("<") &&
+        nextToken.trim().length > 0 &&
+        followingToken &&
+        followingToken.startsWith("</")
+      ) {
+        // This is a simple value line
+        result += indent.repeat(depth) + token + nextToken.trim() + followingToken + "\n";
+        i += 3;
+        continue;
+      }
+    }
+
+    // Regular tag processing
+    if (isClosing) depth = Math.max(0, depth - 1);
+
+    // Add indentation and token
+    result += indent.repeat(depth) + token + "\n";
+
+    // Increase depth for opening tags (but not self-closing)
+    if (isOpening) depth++;
+    
+    i++;
+  }
+
+  return result.trim();
 }
 
 const LINE_REGEX = /^(\d{2}\/\d{2}\/\d{4})\s+(\d{2}:\d{2}:\d{2})\s+\[([^\]]*)\]\s*(.*)$/;
