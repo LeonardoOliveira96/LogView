@@ -24,6 +24,7 @@ export interface NoteItem {
 
 export interface Note {
   number: string;
+  serie: string;         // Note series (positions 22-24 of chaveAcesso)
   status: NoteStatus;
   contingency: boolean;
   contingencyReason: string;
@@ -55,6 +56,13 @@ export interface ParsedLog {
   pdvVersion: string;
   terminal: string;
   rawContent: string;
+  // New header/session fields
+  osInfo: string;           // e.g. "Windows 10"
+  jreVersion: string;       // e.g. "1.8.0_451"
+  systemCode: string;       // ERP system code, e.g. "sj2g802f"
+  pdvLoginTime: string;     // Timestamp of first [PDV] Efetuou Login
+  pdvCloseTime: string;     // Timestamp of [PDV] PDV Encerrado (or empty)
+  pdvCloseIsLast: boolean;  // true = derived from last log line (no close event)
 }
 
 const TPAG_MAP: Record<string, string> = {
@@ -151,6 +159,14 @@ function noteFromChave(chave: string): string | null {
   return null;
 }
 
+// Extract série (series) from a 44-digit chaveAcesso: positions 22-24 (3 digits)
+function serieFromChave(chave: string): string {
+  if (chave.length === 44 && /^\d{44}$/.test(chave)) {
+    return String(parseInt(chave.substring(22, 25), 10));
+  }
+  return "";
+}
+
 export function parseLog(content: string): ParsedLog {
   const rawLines = content.split(/\r?\n/);
 
@@ -177,12 +193,19 @@ export function parseLog(content: string): ParsedLog {
   let hasCriticalError = false;
   let pdvVersion = "";
   let terminal = "";
+  let osInfo = "";
+  let jreVersion = "";
+  let systemCode = "";
+  let pdvLoginTime = "";
+  let pdvCloseTime = "";
+  let lastEntryTime = "";
 
   // Helper to get or create note
   function getNote(num: string): Note {
     if (!notesMap.has(num)) {
       notesMap.set(num, {
         number: num,
+        serie: "",
         status: "approved",
         contingency: false,
         contingencyReason: "",
@@ -212,10 +235,25 @@ export function parseLog(content: string): ParsedLog {
       return;
     }
 
+    // Extract OS and JRE from header line "SO: ... JRE: ..."
+    if (/^\s*SO:/i.test(trimmed)) {
+      const soMatch = trimmed.match(/SO:\s*([^J]+?)(?=\s+JRE:|$)/i);
+      if (soMatch) osInfo = soMatch[1].trim();
+      const jreMatch = trimmed.match(/JRE:\s*(\S+)/i);
+      if (jreMatch) jreVersion = jreMatch[1].trim();
+      return;
+    }
+
     // Extract terminal
     if (/TERMINAL SALVO/i.test(trimmed)) {
       const tMatch = trimmed.match(/TERMINAL SALVO\s*-\s*(\d+)/i);
       if (tMatch) terminal = tMatch[1];
+    }
+
+    // Extract system code from "SISTEMA ERP - https://.../<code>/"
+    if (!systemCode && /SISTEMA ERP/i.test(trimmed)) {
+      const urlMatch = trimmed.match(/https?:\/\/[^/]+\/([^/\s]+)\/?/i);
+      if (urlMatch) systemCode = urlMatch[1];
     }
 
     const match = trimmed.match(LINE_REGEX);
@@ -232,8 +270,19 @@ export function parseLog(content: string): ParsedLog {
 
     entries.push(entry);
 
+    // Track last logged timestamp
+    lastEntryTime = `${entry.date} ${entry.time}`;
+
     const desc = entry.description;
     const fullLine = trimmed;
+
+    // ─── PDV Login / Close detection ───
+    if (desc.includes("[PDV] Efetuou Login") && !pdvLoginTime) {
+      pdvLoginTime = `${entry.date} ${entry.time}`;
+    }
+    if (desc.includes("[PDV] PDV Encerrado") && !pdvCloseTime) {
+      pdvCloseTime = `${entry.date} ${entry.time}`;
+    }
 
     // ─── ERROR detection ───
     if (entry.type === "ERROR") {
@@ -525,6 +574,22 @@ export function parseLog(content: string): ParsedLog {
     }
   });
 
+  // ─── Post-processing: fill serie from chaveAcesso or nfeXml ───
+  notesMap.forEach((note) => {
+    if (!note.serie) {
+      if (note.chaveAcesso) {
+        note.serie = serieFromChave(note.chaveAcesso);
+      }
+      if (!note.serie && note.nfeXml) {
+        const serieXmlMatch = note.nfeXml.match(/<serie>(\d+)<\/serie>/);
+        if (serieXmlMatch) note.serie = String(parseInt(serieXmlMatch[1], 10));
+      }
+    }
+  });
+
+  const pdvCloseIsLast = !pdvCloseTime;
+  const resolvedCloseTime = pdvCloseTime || lastEntryTime;
+
   return {
     entries,
     notes: notesMap,
@@ -534,5 +599,11 @@ export function parseLog(content: string): ParsedLog {
     pdvVersion,
     terminal,
     rawContent: content,
+    osInfo,
+    jreVersion,
+    systemCode,
+    pdvLoginTime,
+    pdvCloseTime: resolvedCloseTime,
+    pdvCloseIsLast,
   };
 }
