@@ -4,9 +4,10 @@ import { Upload, FileText } from "lucide-react";
 interface FileUploadProps {
   onFileLoaded: (content: string, fileName: string) => void;
   compact?: boolean;
+  onReset?: () => void;
 }
 
-export function FileUpload({ onFileLoaded, compact }: FileUploadProps) {
+export function FileUpload({ onFileLoaded, compact, onReset }: FileUploadProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [fileName, setFileName] = useState<string | null>(null);
 
@@ -45,9 +46,17 @@ export function FileUpload({ onFileLoaded, compact }: FileUploadProps) {
   );
 
   if (compact) {
+    const handleCompactClick = () => {
+      if (onReset) {
+        onReset();
+      } else {
+        triggerPicker();
+      }
+    };
+
     return (
       <button
-        onClick={triggerPicker}
+        onClick={handleCompactClick}
         className="flex items-center gap-1.5 rounded-lg border border-border bg-muted/40 px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         title="Carregar outro arquivo"
       >

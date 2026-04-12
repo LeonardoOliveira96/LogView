@@ -7,42 +7,86 @@ import { ErrorList } from "@/components/ErrorList";
 import { InstabilityList } from "@/components/InstabilityList";
 import { Filters, type StatusFilter } from "@/components/Filters";
 import { LogViewerModal } from "@/components/LogViewerModal";
+import { LogSelector } from "@/components/LogSelector";
 import { parseLog, type ParsedLog, type Note } from "@/lib/logParser";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollText } from "lucide-react";
 
 const Index = () => {
-  const [data, setData] = useState<ParsedLog | null>(null);
-  const [fileName, setFileName] = useState("");
+  const [logsMap, setLogsMap] = useState<Map<string, ParsedLog>>(new Map());
+  const [selectedLogId, setSelectedLogId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [search, setSearch] = useState("");
   const [selectedNote, setSelectedNote] = useState<Note | null>(null);
   const [showLogViewer, setShowLogViewer] = useState(false);
 
+  const currentData = selectedLogId ? logsMap.get(selectedLogId) : null;
+
   const handleFileLoaded = useCallback((content: string, name: string) => {
     const parsed = parseLog(content);
-    setData(parsed);
-    setFileName(name);
+    const logId = `${name}-${Date.now()}`;
+
+    setLogsMap((prev) => {
+      const newMap = new Map(prev);
+      newMap.set(logId, parsed);
+      return newMap;
+    });
+
+    setSelectedLogId(logId);
     setSelectedNote(null);
     setStatusFilter("all");
     setSearch("");
   }, []);
 
-  const handleNavigateToNote = useCallback((noteNumber: string, filter?: string) => {
-    if (!data) return;
-    const note = data.notes.get(noteNumber);
-    if (note) {
-      setSelectedNote(note);
-      if (filter) {
-        setStatusFilter(filter as StatusFilter);
-      }
-      setSearch("");
+  const handleRemoveLog = useCallback((logId: string) => {
+    setLogsMap((prev) => {
+      const newMap = new Map(prev);
+      newMap.delete(logId);
+      return newMap;
+    });
+
+    if (selectedLogId === logId) {
+      const remainingLogs = Array.from(logsMap.keys()).filter((id) => id !== logId);
+      setSelectedLogId(remainingLogs[0] || null);
     }
-  }, [data]);
+  }, [logsMap, selectedLogId]);
+
+  const handleAddLog = useCallback(() => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".gat,.log,.txt";
+    input.onchange = (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          const text = ev.target?.result as string;
+          handleFileLoaded(text, file.name);
+        };
+        reader.readAsText(file);
+      }
+    };
+    input.click();
+  }, [handleFileLoaded]);
+
+  const handleNavigateToNote = useCallback(
+    (noteNumber: string, filter?: string) => {
+      if (!currentData) return;
+      const note = currentData.notes.get(noteNumber);
+      if (note) {
+        setSelectedNote(note);
+        if (filter) {
+          setStatusFilter(filter as StatusFilter);
+        }
+        setSearch("");
+      }
+    },
+    [currentData]
+  );
 
   const filteredNotes = useMemo(() => {
-    if (!data) return [];
-    let notes = Array.from(data.notes.values());
+    if (!currentData) return [];
+    let notes = Array.from(currentData.notes.values());
     if (statusFilter !== "all") {
       notes = notes.filter((n) => n.status === statusFilter);
     }
@@ -50,7 +94,12 @@ const Index = () => {
       notes = notes.filter((n) => n.number.includes(search.trim()));
     }
     return notes;
-  }, [data, statusFilter, search]);
+  }, [currentData, statusFilter, search]);
+
+  const logsList = Array.from(logsMap.entries()).map(([id]) => ({
+    id,
+    name: id.split("-").slice(0, -1).join("-") || id,
+  }));
 
   return (
     <div className="min-h-screen bg-background">
@@ -60,12 +109,9 @@ const Index = () => {
             <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="Logo" className="h-7 w-7" />
           </div>
           <div className="flex-1">
-            <h1 className="text-lg font-bold text-foreground">Log View</h1>
-            {fileName && (
-              <p className="text-xs text-muted-foreground">{fileName}</p>
-            )}
+            <h1 className="text-lg font-bold text-foreground">Analisa Log</h1>
           </div>
-          {data && (
+          {currentData && (
             <button
               onClick={() => setShowLogViewer(true)}
               className="flex items-center gap-1.5 rounded-lg border border-border bg-muted/40 px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
@@ -75,14 +121,14 @@ const Index = () => {
               Ver Log
             </button>
           )}
-          {data && (
-            <FileUpload onFileLoaded={handleFileLoaded} compact />
+          {logsMap.size > 0 && (
+            <FileUpload onFileLoaded={handleFileLoaded} onReset={handleAddLog} compact />
           )}
         </div>
       </header>
 
       <main className="container mx-auto px-4 py-6 space-y-6">
-        {!data ? (
+        {logsMap.size === 0 ? (
           <div className="mx-auto max-w-xl pt-20">
             <div className="mb-8 text-center">
               <h2 className="text-2xl font-bold text-foreground">
@@ -97,59 +143,73 @@ const Index = () => {
           </div>
         ) : (
           <>
-            <Dashboard data={data} />
+            {currentData && (
+              <>
+                <Dashboard data={currentData} />
 
-            <Tabs defaultValue="notes" className="space-y-4">
-              <TabsList>
-                <TabsTrigger value="notes">Notas Fiscais</TabsTrigger>
-                <TabsTrigger value="errors">
-                  Erros ({data.errors.length})
-                </TabsTrigger>
-                <TabsTrigger value="instabilities">
-                  Instabilidades ({data.instabilities.length})
-                </TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="notes" className="space-y-4">
-                <Filters
-                  statusFilter={statusFilter}
-                  onStatusChange={setStatusFilter}
-                  search={search}
-                  onSearchChange={setSearch}
-                />
-
-                <div className="grid gap-6 lg:grid-cols-2">
-                  <NotesTable
-                    notes={filteredNotes}
-                    onSelectNote={setSelectedNote}
-                    selectedNote={selectedNote}
+                {logsMap.size > 0 && (
+                  <LogSelector
+                    logs={logsList}
+                    selectedId={selectedLogId}
+                    onSelectLog={setSelectedLogId}
+                    onRemoveLog={handleRemoveLog}
+                    onAddLog={handleAddLog}
                   />
-                  {selectedNote && (
-                    <NoteDetail
-                      note={selectedNote}
-                      onClose={() => setSelectedNote(null)}
-                      onNavigateToNote={handleNavigateToNote}
+                )}
+
+                <Tabs defaultValue="notes" className="space-y-4">
+                  <TabsList>
+                    <TabsTrigger value="notes">Notas Fiscais</TabsTrigger>
+                    <TabsTrigger value="errors">
+                      Erros ({currentData.errors.length})
+                    </TabsTrigger>
+                    <TabsTrigger value="instabilities">
+                      Instabilidades ({currentData.instabilities.length})
+                    </TabsTrigger>
+                  </TabsList>
+
+                  <TabsContent value="notes" className="space-y-4">
+                    <Filters
+                      statusFilter={statusFilter}
+                      onStatusChange={setStatusFilter}
+                      search={search}
+                      onSearchChange={setSearch}
                     />
-                  )}
-                </div>
-              </TabsContent>
 
-              <TabsContent value="errors">
-                <ErrorList errors={data.errors} />
-              </TabsContent>
+                    <div className="grid gap-6 lg:grid-cols-2">
+                      <NotesTable
+                        notes={filteredNotes}
+                        onSelectNote={setSelectedNote}
+                        selectedNote={selectedNote}
+                      />
+                      {selectedNote && (
+                        <NoteDetail
+                          note={selectedNote}
+                          onClose={() => setSelectedNote(null)}
+                          onNavigateToNote={handleNavigateToNote}
+                        />
+                      )}
+                    </div>
+                  </TabsContent>
 
-              <TabsContent value="instabilities">
-                <InstabilityList instabilities={data.instabilities} />
-              </TabsContent>
-            </Tabs>
+                  <TabsContent value="errors">
+                    <ErrorList errors={currentData.errors} />
+                  </TabsContent>
+
+                  <TabsContent value="instabilities">
+                    <InstabilityList instabilities={currentData.instabilities} />
+                  </TabsContent>
+                </Tabs>
+              </>
+            )}
           </>
         )}
       </main>
 
-      {showLogViewer && data && (
+      {showLogViewer && currentData && (
         <LogViewerModal
-          content={data.rawContent}
-          fileName={fileName}
+          content={currentData.rawContent}
+          fileName={selectedLogId ? selectedLogId.split("-")[0] : "log"}
           onClose={() => setShowLogViewer(false)}
         />
       )}
