@@ -13,6 +13,22 @@ interface NoteDetailProps {
 export function NoteDetail({ note, onClose, onNavigateToNote }: NoteDetailProps) {
   const [showXml, setShowXml] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<LogEntry | null>(null);
+  const [showAllProducts, setShowAllProducts] = useState(false);
+
+  const formatDate = (dateString: string) => {
+    try {
+      const date = new Date(dateString);
+      const day = String(date.getDate()).padStart(2, "0");
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const year = date.getFullYear();
+      const hours = String(date.getHours()).padStart(2, "0");
+      const minutes = String(date.getMinutes()).padStart(2, "0");
+      const seconds = String(date.getSeconds()).padStart(2, "0");
+      return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
+    } catch {
+      return dateString;
+    }
+  };
 
   return (
     <>
@@ -96,11 +112,11 @@ export function NoteDetail({ note, onClose, onNavigateToNote }: NoteDetailProps)
               </div>
             )}
             {note.dhEmissao && (
-              <div className="flex items-center gap-2 rounded-lg bg-muted/30 px-3 py-2">
+              <div className="flex items-center gap-2 rounded-lg bg-muted/30 px-3 py-2 sm:col-span-2">
                 <Calendar className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 <div className="min-w-0">
                   <p className="text-xs text-muted-foreground">Emissão</p>
-                  <p className="truncate text-xs text-foreground">{note.dhEmissao.replace("T", " ").replace(/-03:00$/, "")}</p>
+                  <p className="text-xs text-foreground whitespace-normal">{formatDate(note.dhEmissao)}</p>
                 </div>
               </div>
             )}
@@ -134,7 +150,7 @@ export function NoteDetail({ note, onClose, onNavigateToNote }: NoteDetailProps)
                   </tr>
                 </thead>
                 <tbody>
-                  {note.itens.map((item) => (
+                  {note.itens.slice(0, showAllProducts ? undefined : 2).map((item) => (
                     <tr key={item.numero} className="border-b border-border/50 last:border-0 hover:bg-muted/20">
                       <td className="px-3 py-2 text-muted-foreground">{item.numero}</td>
                       <td className="px-3 py-2">
@@ -157,6 +173,22 @@ export function NoteDetail({ note, onClose, onNavigateToNote }: NoteDetailProps)
                 </tbody>
               </table>
             </div>
+            {note.itens.length > 2 && !showAllProducts && (
+              <button
+                onClick={() => setShowAllProducts(true)}
+                className="mt-2 w-full rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-muted/40 hover:text-foreground transition-colors"
+              >
+                Mostrar todos os {note.itens.length} produtos
+              </button>
+            )}
+            {showAllProducts && note.itens.length > 2 && (
+              <button
+                onClick={() => setShowAllProducts(false)}
+                className="mt-2 w-full rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-muted/40 hover:text-foreground transition-colors"
+              >
+                Mostrar menos
+              </button>
+            )}
           </div>
         )}
 
