@@ -489,6 +489,32 @@ export function parseLog(content: string): ParsedLog {
       }
     }
 
+    // ─── CANCELAMENTO detection (>> cancelamento\<chave>-env-canc.xml) ───
+    const cancellationMatch = fullLine.match(/>>\s*cancelamento\\([^\s]+)/);
+    if (cancellationMatch) {
+      const filePath = cancellationMatch[1];
+      const chaveMatch = filePath.match(/(\d{44})-env-canc\.xml/);
+      if (chaveMatch) {
+        const chave = chaveMatch[1];
+        const noteNum = noteFromChave(chave);
+        if (noteNum) {
+          const note = getNote(noteNum);
+          note.chaveAcesso = chave;
+          note.status = "cancelada";
+          note.events.push({
+            ...entry,
+            type: "CANCELAMENTO",
+            description: "🚫 Nota cancelada",
+            metadata: {
+              "Chave de Acesso": chave,
+              "Arquivo": filePath,
+              "Data/Hora": `${entry.date} ${entry.time}`,
+            },
+          });
+        }
+      }
+    }
+
     // ─── COO NFCE MANTIDO ───
     const cooMatch = desc.match(/COO\s+NFCE\s+\S+\s+-\s+(\d+)/i);
     if (cooMatch) {
