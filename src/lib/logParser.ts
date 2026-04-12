@@ -469,21 +469,24 @@ export function parseLog(content: string): ParsedLog {
 
     // ─── ERROR detection ───
     if (entry.type === "ERROR") {
-      errors.push(entry);
-      hasCriticalError = true;
+      // Skip if this is a cancellation notification (>> cancelamento\...)
+      if (!fullLine.match(/>>\s*cancelamento\\/)) {
+        errors.push(entry);
+        hasCriticalError = true;
 
-      // Try to associate error with a note via chaveAcesso in the line
-      const chaveMatch = fullLine.match(/(\d{44})/);
-      if (chaveMatch) {
-        const noteNum = noteFromChave(chaveMatch[1]);
-        if (noteNum) {
-          const note = getNote(noteNum);
-          note.errors.push(entry);
-          note.chaveAcesso = chaveMatch[1];
-          // Only change status to error if not already in contingency
-          // This allows contingency notes with errors to remain as contingency
-          if (note.status !== "contingency" && note.status !== "inutilizada") {
-            note.status = "error";
+        // Try to associate error with a note via chaveAcesso in the line
+        const chaveMatch = fullLine.match(/(\d{44})/);
+        if (chaveMatch) {
+          const noteNum = noteFromChave(chaveMatch[1]);
+          if (noteNum) {
+            const note = getNote(noteNum);
+            note.errors.push(entry);
+            note.chaveAcesso = chaveMatch[1];
+            // Only change status to error if not already in contingency
+            // This allows contingency notes with errors to remain as contingency
+            if (note.status !== "contingency" && note.status !== "inutilizada") {
+              note.status = "error";
+            }
           }
         }
       }
@@ -1004,12 +1007,15 @@ export function parseLog(content: string): ParsedLog {
 
   // ─── Post-processing: detect instabilities from error patterns ───
   errors.forEach((err) => {
-    if (!instabilities.find(i => i.lineNumber === err.lineNumber)) {
-      instabilities.push({
-        time: `${err.date} ${err.time}`,
-        description: err.description.length > 200 ? err.description.substring(0, 200) + "..." : err.description,
-        lineNumber: err.lineNumber,
-      });
+    // Skip cancellations from instabilities list
+    if (!err.raw.match(/>>\s*cancelamento\\/)) {
+      if (!instabilities.find(i => i.lineNumber === err.lineNumber)) {
+        instabilities.push({
+          time: `${err.date} ${err.time}`,
+          description: err.description.length > 200 ? err.description.substring(0, 200) + "..." : err.description,
+          lineNumber: err.lineNumber,
+        });
+      }
     }
   });
 
