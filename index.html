@@ -3,6 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
     <title>Analisa Log</title>
     <meta name="description" content="Analisador de logs GAT PDV" />
     <meta name="author" content="LeonardoOliveira96" />
@@ -16,5 +19,27 @@
 
   <body>
     <div id="root"></div>
+    <script>
+      // Force re-check for updates every time the page loads
+      // Clear all caches to ensure latest version is always visible
+      if ("caches" in window) {
+        caches.keys().then((cacheNames) => {
+          cacheNames.forEach((cacheName) => {
+            caches.delete(cacheName);
+          });
+        });
+      }
+      // Check for updates periodically (every minute)
+      setInterval(() => {
+        fetch(window.location.href, { cache: "no-store" })
+          .then((response) => response.text())
+          .then((html) => {
+            if (!document.documentElement.isEqualNode(new DOMParser().parseFromString(html, "text/html").documentElement)) {
+              console.log("Update available, reloading...");
+              window.location.reload();
+            }
+          });
+      }, 60000);
+    </script>
   </body>
 </html>
