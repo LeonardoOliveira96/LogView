@@ -3,12 +3,14 @@ import { FileUpload } from "@/components/FileUpload";
 import { Dashboard } from "@/components/Dashboard";
 import { NotesTable } from "@/components/NotesTable";
 import { NoteDetail } from "@/components/NoteDetail";
+import { SimpleSalesTable } from "@/components/SimpleSalesTable";
+import { SimpleSaleDetail } from "@/components/SimpleSaleDetail";
 import { ErrorList } from "@/components/ErrorList";
 import { InstabilityList } from "@/components/InstabilityList";
 import { Filters, type StatusFilter } from "@/components/Filters";
 import { LogViewerModal } from "@/components/LogViewerModal";
 import { LogSelector } from "@/components/LogSelector";
-import { parseLog, type ParsedLog, type Note } from "@/lib/logParser";
+import { parseLog, type ParsedLog, type Note, type SimpleSale } from "@/lib/logParser";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollText } from "lucide-react";
 
@@ -18,6 +20,7 @@ const Index = () => {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [search, setSearch] = useState("");
   const [selectedNote, setSelectedNote] = useState<Note | null>(null);
+  const [selectedSimpleSale, setSelectedSimpleSale] = useState<SimpleSale | null>(null);
   const [showLogViewer, setShowLogViewer] = useState(false);
 
   const currentData = selectedLogId ? logsMap.get(selectedLogId) : null;
@@ -34,6 +37,7 @@ const Index = () => {
 
     setSelectedLogId(logId);
     setSelectedNote(null);
+    setSelectedSimpleSale(null);
     setStatusFilter("all");
     setSearch("");
   }, []);
@@ -87,7 +91,7 @@ const Index = () => {
   const filteredNotes = useMemo(() => {
     if (!currentData) return [];
     let notes = Array.from(currentData.notes.values());
-    if (statusFilter !== "all") {
+    if (statusFilter !== "all" && statusFilter !== "simple-sales") {
       notes = notes.filter((n) => n.status === statusFilter);
     }
     if (search.trim()) {
@@ -95,6 +99,15 @@ const Index = () => {
     }
     return notes;
   }, [currentData, statusFilter, search]);
+
+  const filteredSimpleSales = useMemo(() => {
+    if (!currentData) return [];
+    let sales = currentData.simpleSales;
+    if (search.trim()) {
+      sales = sales.filter((s) => s.id.includes(search.trim()) || s.formaPagamento.toLowerCase().includes(search.toLowerCase()));
+    }
+    return sales;
+  }, [currentData, search]);
 
   const logsList = Array.from(logsMap.entries()).map(([id]) => ({
     id,
@@ -157,9 +170,24 @@ const Index = () => {
                   />
                 )}
 
-                <Tabs defaultValue="notes" className="space-y-4">
+                <Tabs defaultValue={statusFilter === "simple-sales" ? "simple-sales" : "notes"} onValueChange={(value) => {
+                  if (value === "simple-sales") {
+                    setStatusFilter("simple-sales");
+                    setSelectedNote(null);
+                    setSelectedSimpleSale(null);
+                  } else if (value === "notes") {
+                    setStatusFilter("all");
+                    setSelectedNote(null);
+                    setSelectedSimpleSale(null);
+                  }
+                }} className="space-y-4">
                   <TabsList>
-                    <TabsTrigger value="notes">Notas Fiscais</TabsTrigger>
+                    <TabsTrigger value="simple-sales">
+                      Vendas Simples ({currentData.simpleSales.length})
+                    </TabsTrigger>
+                    <TabsTrigger value="notes">
+                      Notas Fiscais ({currentData.notes.size})
+                    </TabsTrigger>
                     <TabsTrigger value="errors">
                       Erros ({currentData.errors.length})
                     </TabsTrigger>
@@ -168,10 +196,46 @@ const Index = () => {
                     </TabsTrigger>
                   </TabsList>
 
+                  <TabsContent value="simple-sales" className="space-y-4">
+                    {filteredSimpleSales.length > 0 ? (
+                      <div className="space-y-4">
+                        <div className="relative">
+                          <input
+                            placeholder="Buscar por COO, forma de pagamento..."
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                            className="w-full rounded-lg border border-border bg-card px-4 py-2 text-sm placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                          />
+                        </div>
+                        <div className="grid gap-6 lg:grid-cols-2">
+                          <SimpleSalesTable
+                            sales={filteredSimpleSales}
+                            onSelectSale={setSelectedSimpleSale}
+                            selectedSale={selectedSimpleSale}
+                          />
+                          {selectedSimpleSale && (
+                            <SimpleSaleDetail sale={selectedSimpleSale} />
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="rounded-2xl border border-border bg-card p-8 text-center text-muted-foreground">
+                        Nenhuma venda simples encontrada.
+                      </div>
+                    )}
+                  </TabsContent>
+
                   <TabsContent value="notes" className="space-y-4">
                     <Filters
-                      statusFilter={statusFilter}
-                      onStatusChange={setStatusFilter}
+                      statusFilter={statusFilter === "simple-sales" ? "all" : statusFilter}
+                      onStatusChange={(s) => {
+                        if (s === "simple-sales") {
+                          // This shouldn't happen from Filters, but handle it just in case
+                        } else {
+                          setStatusFilter(s);
+                          setSelectedNote(null);
+                        }
+                      }}
                       search={search}
                       onSearchChange={setSearch}
                     />

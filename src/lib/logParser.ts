@@ -22,6 +22,35 @@ export interface NoteItem {
   valorTotal: number;
 }
 
+export interface SimpleItem {
+  numeroItem: number;
+  id: string;
+  codigo: string;
+  descricaoResumida: string;
+  quantidade: number;
+  unidade: string;
+  valorUnitario: number;
+  valorDesconto: number;
+  subTotal: number;
+}
+
+export interface SimpleSale {
+  id: string; // COO (Cupom Óptico Operacional)
+  date: string;
+  time: string;
+  terminal: string;
+  funcionario: string;
+  vrTotal: number;
+  vrSubTotal: number;
+  vrPago: number;
+  formaPagamento: string; // Payment method label
+  tpag: string; // Payment type code
+  itens: SimpleItem[];
+  status: "closed" | "open" | "pending";
+  lineNumber: number;
+  raw: string;
+}
+
 export interface Note {
   number: string;
   serie: string;         // Note series (positions 22-24 of chaveAcesso)
@@ -53,6 +82,7 @@ export interface Instability {
 export interface ParsedLog {
   entries: LogEntry[];
   notes: Map<string, Note>;
+  simpleSales: SimpleSale[];
   errors: LogEntry[];
   instabilities: Instability[];
   pdvStatus: "ok" | "error";
@@ -125,6 +155,29 @@ function parseItens(xml: string): NoteItem[] {
       quantidade: parseFloat(xmlTag(block, "qCom") || "0"),
       valorUnitario: parseFloat(xmlTag(block, "vUnCom") || "0"),
       valorTotal: parseFloat(xmlTag(block, "vProd") || "0"),
+    });
+  }
+  return items;
+}
+
+/** Parse items from simple sale <venda> XML */
+function parseSimpleSaleItens(xml: string): SimpleItem[] {
+  const items: SimpleItem[] = [];
+  const itemRegex = /<item>([\s\S]*?)<\/item>/g;
+  let m: RegExpExecArray | null;
+  while ((m = itemRegex.exec(xml)) !== null) {
+    const block = m[1];
+    const numeroItem = xmlTag(block, "numeroItem");
+    items.push({
+      numeroItem: parseInt(numeroItem, 10),
+      id: xmlTag(block, "id"),
+      codigo: xmlTag(block, "codigo"),
+      descricaoResumida: xmlTag(block, "descricaoResumida"),
+      quantidade: parseFloat(xmlTag(block, "quantidade") || "0"),
+      unidade: xmlTag(block, "unidade"),
+      valorUnitario: parseFloat(xmlTag(block, "valorUnitario") || "0"),
+      valorDesconto: parseFloat(xmlTag(block, "valorDesconto") || "0"),
+      subTotal: parseFloat(xmlTag(block, "subTotal")?.replace(",", ".") || "0"),
     });
   }
   return items;
@@ -371,6 +424,7 @@ export function parseLog(content: string): ParsedLog {
   const errors: LogEntry[] = [];
   const instabilities: Instability[] = [];
   const notesMap = new Map<string, Note>();
+  const simpleSalesMap = new Map<string, SimpleSale>();
   let hasCriticalError = false;
   let pdvVersion = "";
   let terminal = "";
@@ -750,6 +804,43 @@ export function parseLog(content: string): ParsedLog {
         return;
       }
 
+      // ─── Parse SIMPLE SALES from <venda> XML ───
+      if (entry.type === "XML CRIADO" && desc.includes("<venda>") && !desc.includes("<NFe ")) {
+        // This is a simple sale (not a note/NFe)
+        const vendaXmlStart = desc.indexOf("<venda>");
+        if (vendaXmlStart !== -1) {
+          const vendaXmlEnd = desc.indexOf("</venda>") + 8;
+          const vendaXml = desc.substring(vendaXmlStart, vendaXmlEnd);
+          
+          // Extract COO (Cupom Óptico Operacional) as unique identifier
+          const cooMatch = xmlTag(vendaXml, "coo");
+          if (cooMatch) {
+            const cooKey = cooMatch;
+            
+            // Get or create simple sale
+            if (!simpleSalesMap.has(cooKey)) {
+              const formaPagamento = xmlTag(vendaXml, "tpag");
+              simpleSalesMap.set(cooKey, {
+                id: cooKey,
+                date: entry.date,
+                time: entry.time,
+                terminal: xmlTag(vendaXml, "terminal"),
+                funcionario: xmlTag(vendaXml, "funcionario"),
+                vrTotal: parseFloat(xmlTag(vendaXml, "vrTotal") || "0"),
+                vrSubTotal: parseFloat(xmlTag(vendaXml, "vrSubTotal") || "0"),
+                vrPago: parseFloat(xmlTag(vendaXml, "vrPago") || "0"),
+                formaPagamento: TPAG_MAP[formaPagamento] || formaPagamento,
+                tpag: formaPagamento,
+                itens: parseSimpleSaleItens(vendaXml),
+                status: xmlTag(vendaXml, "statusVenda") as "closed" | "open" | "pending" || "closed",
+                lineNumber: index + 1,
+                raw: desc,
+              });
+            }
+          }
+        }
+      }
+
       // ─── Extract NF-e data from XML CRIADO (NFe type) ───
       if (entry.type === "XML CRIADO" && desc.includes("<NFe ")) {
         // This is a full NF-e XML from contingency authorization or backup
@@ -1085,6 +1176,7 @@ export function parseLog(content: string): ParsedLog {
   return {
     entries,
     notes: notesMap,
+    simpleSales: Array.from(simpleSalesMap.values()),
     errors,
     instabilities,
     pdvStatus: hasCriticalError ? "error" : "ok",
