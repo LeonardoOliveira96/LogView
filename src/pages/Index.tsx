@@ -122,7 +122,7 @@ const Index = () => {
             <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="Logo" className="h-7 w-7" />
           </div>
           <div className="flex-1">
-            <h1 className="text-lg font-bold text-foreground">Analisa Log</h1>
+            <h1 className="text-lg font-bold text-foreground">Analisa Log 1.0.1 </h1>
           </div>
           {currentData && (
             <button

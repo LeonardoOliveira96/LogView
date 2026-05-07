@@ -28,11 +28,10 @@ export function Filters({ statusFilter, onStatusChange, search, onSearchChange }
           <button
             key={s.value}
             onClick={() => onStatusChange(s.value)}
-            className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-              statusFilter === s.value
+            className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${statusFilter === s.value
                 ? "bg-primary text-primary-foreground"
                 : "bg-muted text-muted-foreground hover:bg-muted/80"
-            }`}
+              }`}
           >
             {s.label}
           </button>
